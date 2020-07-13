@@ -5,8 +5,11 @@ const
 export default {
 	input: path.posix.resolve('src/js/index.js'),
 	external: [
-		'd3',
+		'd3-array',
+		'd3-scale',
 		'd3-hexbin',
+		'd3-dispatch',
+		'd3-selection',
 		'leaflet'
 	],
 	output: {

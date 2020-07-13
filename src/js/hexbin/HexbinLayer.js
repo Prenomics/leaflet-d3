@@ -1,17 +1,9 @@
-import * as d3 from 'd3';
-import * as d3Hexbin from 'd3-hexbin';
+import {hexbin} from 'd3-hexbin';
+import {event, mouse, select} from 'd3-selection';
+import {dispatch} from 'd3-dispatch';
+import {scaleLinear} from 'd3-scale';
+import {extent} from 'd3-array';
 import 'leaflet';
-
-/**
- * This is a convoluted way of getting ahold of the hexbin function.
- * - When imported globally, d3 is exposed in the global namespace as 'd3'
- * - When imported using a module system, it's a named import (and can't collide with d3)
- * - When someone isn't importing d3-hexbin, the named import will be undefined
- *
- * As a result, we have to figure out how it's being imported and get the function reference
- * (which is why we have this convoluted nested ternary statement
- */
-var d3_hexbin = (null != d3.hexbin)? d3.hexbin : (null != d3Hexbin)? d3Hexbin.hexbin : null;
 
 /**
  * L is defined by the Leaflet library, see git://github.com/Leaflet/Leaflet.git for documentation
@@ -23,17 +15,18 @@ L.HexbinLayer = L.SVG.extend({
 	/**
 	 * Default options
 	 */
-	options : {
-		radius : 12,
+	options: {
+		radius: 12,
 		opacity: 0.6,
 		duration: 200,
 
-		colorScaleExtent: [ 1, undefined ],
-		radiusScaleExtent: [ 1, undefined ],
+		scale: 'linear',
+		colorScaleExtent: [1, undefined],
+		radiusScaleExtent: [1, undefined],
 		colorDomain: null,
 		radiusDomain: null,
-		colorRange: [ '#f7fbff', '#08306b' ],
-		radiusRange: [ 4, 12 ],
+		colorRange: ['#f7fbff', '#08306b'],
+		radiusRange: [4, 12],
 
 		pointerEvents: 'all'
 	},
@@ -44,39 +37,51 @@ L.HexbinLayer = L.SVG.extend({
 	 * user when they create the layer
 	 * @param options Options object where the options override the defaults
 	 */
-	initialize : function(options) {
+	initialize: function (options) {
 		L.setOptions(this, options);
 
 		// Set up the various overrideable functions
 		this._fn = {
-			lng: function(d) { return d[0]; },
-			lat: function(d) { return d[1]; },
-			colorValue: function(d) { return d.length; },
-			radiusValue: function(d) { return Number.MAX_VALUE; },
+			lng: function (d) {
+				return d[0];
+			},
+			lat: function (d) {
+				return d[1];
+			},
+			colorValue: function (d) {
+				return d.length;
+			},
+			radiusValue: function (d) {
+				return Number.MAX_VALUE;
+			},
 
-			fill: function(d) {
-				var val = this._fn.colorValue(d);
-				return (null != val) ? this._scale.color(val) : 'none';
+			fill: function (d) {
+				var val = this.options.scale === 'log' ? Math.log2(this._fn.colorValue(d)) : this._fn.colorValue(d);
+				return null != val ? this._scale.color(val) : 'none';
 			}
 		};
 
 		// Set up the customizable scale
 		this._scale = {
-			color: d3.scaleLinear(),
-			radius: d3.scaleLinear()
+			color: scaleLinear(),
+			radius: scaleLinear()
 		};
 
 		// Set up the Dispatcher for managing events and callbacks
-		this._dispatch = d3.dispatch('mouseover', 'mouseout', 'click');
+		this._dispatch = dispatch('mouseover', 'mouseout', 'click');
 
 		// Set up the default hover handler
 		this._hoverHandler = L.HexbinHoverHandler.none();
 
 		// Create the hex layout
-		this._hexLayout = d3_hexbin()
+		this._hexLayout = hexbin()
 			.radius(this.options.radius)
-			.x(function(d) { return d.point[0]; })
-			.y(function(d) { return d.point[1]; });
+			.x(function (d) {
+				return d.point[0];
+			})
+			.y(function (d) {
+				return d.point[1];
+			});
 
 		// Initialize the data array to be empty
 		this._data = [];
@@ -95,7 +100,7 @@ L.HexbinLayer = L.SVG.extend({
 	 * Callback made by Leaflet when the layer is added to the map
 	 * @param map Reference to the map to which this layer has been added
 	 */
-	onAdd : function(map) {
+	onAdd: function (map) {
 
 		L.SVG.prototype.onAdd.call(this);
 
@@ -103,7 +108,7 @@ L.HexbinLayer = L.SVG.extend({
 		this._map = map;
 
 		// Redraw on moveend
-		map.on({ 'moveend': this.redraw }, this);
+		map.on({'moveend': this.redraw}, this);
 
 		// Initial draw
 		this.redraw();
@@ -114,7 +119,7 @@ L.HexbinLayer = L.SVG.extend({
 	 * Callback made by Leaflet when the layer is removed from the map
 	 * @param map Reference to the map from which this layer is being removed
 	 */
-	onRemove : function(map) {
+	onRemove: function (map) {
 
 		L.SVG.prototype.onRemove.call(this);
 
@@ -122,9 +127,11 @@ L.HexbinLayer = L.SVG.extend({
 		this._destroyContainer();
 
 		// Remove events
-		map.off({ 'moveend': this.redraw }, this);
+		map.off({'moveend': this.redraw}, this);
 
 		this._map = null;
+
+		select('g.hexbin').remove();
 
 		// Explicitly will leave the data array alone in case the layer will be shown again
 		//this._data = [];
@@ -135,17 +142,17 @@ L.HexbinLayer = L.SVG.extend({
 	 * Create the SVG container for the hexbins
 	 * @private
 	 */
-	_initContainer : function() {
+	_initContainer: function () {
 
 		L.SVG.prototype._initContainer.call(this);
-		this._d3Container = d3.select(this._container).select('g');
+		this._d3Container = select(this._container).select('g');
 	},
 
 	/**
 	 * Clean up the svg container
 	 * @private
 	 */
-	_destroyContainer: function() {
+	_destroyContainer: function () {
 
 		// Don't do anything
 
@@ -155,7 +162,7 @@ L.HexbinLayer = L.SVG.extend({
 	 * (Re)draws the hexbins data on the container
 	 * @private
 	 */
-	redraw : function() {
+	redraw: function () {
 		var that = this;
 
 		if (!that._map) {
@@ -163,22 +170,26 @@ L.HexbinLayer = L.SVG.extend({
 		}
 
 		// Generate the mapped version of the data
-		var data = that._data.map(function(d) {
+		var data = that._data.map(function (d) {
 			var lng = that._fn.lng(d);
 			var lat = that._fn.lat(d);
 
-			var point = that._project([ lng, lat ]);
-			return { o: d, point: point };
+			var point = that._project([lng, lat]);
+			return {o: d, point: point, intensity: d[2]};
 		});
 
 		// Select the hex group for the current zoom level. This has
 		// the effect of recreating the group if the zoom level has changed
 		var join = this._d3Container.selectAll('g.hexbin')
-			.data([ this._map.getZoom() ], function(d) { return d; });
+			.data([this._map.getZoom()], function (d) {
+				return d;
+			});
 
 		// enter
 		var enter = join.enter().append('g')
-			.attr('class', function(d) { return 'hexbin zoom-' + d; });
+			.attr('class', function (d) {
+				return 'hexbin zoom-' + d;
+			});
 
 		// enter + update
 		var enterUpdate = enter.merge(join);
@@ -191,7 +202,7 @@ L.HexbinLayer = L.SVG.extend({
 
 	},
 
-	_createHexagons : function(g, data) {
+	_createHexagons: function (g, data) {
 		var that = this;
 
 		// Create the bins using the hexbin layout
@@ -224,11 +235,11 @@ L.HexbinLayer = L.SVG.extend({
 		 *    Join the Hexagons to the data
 		 *    Use a deterministic id for tracking bins based on position
 		 */
-		bins = bins.filter(function(d) {
+		bins = bins.filter(function (d) {
 			return bounds.contains(that._map.layerPointToLatLng(L.point(d.x, d.y)));
 		});
 		var join = g.selectAll('g.hexbin-container')
-			.data(bins, function(d) {
+			.data(bins, function (d) {
 				return d.x + ':' + d.y;
 			});
 
@@ -243,7 +254,7 @@ L.HexbinLayer = L.SVG.extend({
 			.attr('fill', that._fn.fill.bind(that))
 			.attr('fill-opacity', that.options.opacity)
 			.attr('stroke-opacity', that.options.opacity)
-			.attr('d', function(d) {
+			.attr('d', function (d) {
 				return that._hexLayout.hexagon(that._scale.radius(that._fn.radiusValue.call(that, d)));
 			});
 
@@ -256,28 +267,28 @@ L.HexbinLayer = L.SVG.extend({
 		var enter = join.enter().append('g').attr('class', 'hexbin-container');
 
 		enter.append('path').attr('class', 'hexbin-hexagon')
-			.attr('transform', function(d) {
+			.attr('transform', function (d) {
 				return 'translate(' + d.x + ',' + d.y + ')';
 			})
-			.attr('d', function(d) {
+			.attr('d', function (d) {
 				return that._hexLayout.hexagon(that._scale.radius.range()[0]);
 			})
 			.attr('fill', that._fn.fill.bind(that))
 			.attr('fill-opacity', 0.01)
 			.attr('stroke-opacity', 0.01)
 			.transition().duration(that.options.duration)
-				.attr('fill-opacity', that.options.opacity)
-				.attr('stroke-opacity', that.options.opacity)
-				.attr('d', function(d) {
-					return that._hexLayout.hexagon(that._scale.radius(that._fn.radiusValue.call(that, d)));
-				});
+			.attr('fill-opacity', that.options.opacity)
+			.attr('stroke-opacity', that.options.opacity)
+			.attr('d', function (d) {
+				return that._hexLayout.hexagon(that._scale.radius(that._fn.radiusValue.call(that, d)));
+			});
 
 		// Grid
 		var gridEnter = enter.append('path').attr('class', 'hexbin-grid')
-			.attr('transform', function(d) {
+			.attr('transform', function (d) {
 				return 'translate(' + d.x + ',' + d.y + ')';
 			})
-			.attr('d', function(d) {
+			.attr('d', function (d) {
 				return that._hexLayout.hexagon(that.options.radius);
 			})
 			.attr('fill', 'none')
@@ -286,15 +297,15 @@ L.HexbinLayer = L.SVG.extend({
 
 		// Grid enter-update
 		gridEnter.merge(join.select('path.hexbin-grid'))
-			.on('mouseover', function(d, i) {
+			.on('mouseover', function (d, i) {
 				that._hoverHandler.mouseover.call(this, that, d, i);
 				that._dispatch.call('mouseover', this, d, i);
 			})
-			.on('mouseout', function(d, i) {
+			.on('mouseout', function (d, i) {
 				that._dispatch.call('mouseout', this, d, i);
 				that._hoverHandler.mouseout.call(this, that, d, i);
 			})
-			.on('click', function(d, i) {
+			.on('click', function (d, i) {
 				that._dispatch.call('click', this, d, i);
 			});
 
@@ -306,7 +317,7 @@ L.HexbinLayer = L.SVG.extend({
 			.transition().duration(that.options.duration)
 			.attr('fill-opacity', 0)
 			.attr('stroke-opacity', 0)
-			.attr('d', function(d) {
+			.attr('d', function (d) {
 				return that._hexLayout.hexagon(0);
 			});
 
@@ -315,37 +326,37 @@ L.HexbinLayer = L.SVG.extend({
 
 	},
 
-	_getExtent: function(bins, valueFn, scaleExtent) {
+	_getExtent: function (bins, valueFn, scaleExtent) {
 
 		// Determine the extent of the values
-		var extent = d3.extent(bins, valueFn.bind(this));
+		var _extent = extent(bins, valueFn.bind(this));
 
 		// If either's null, initialize them to 0
-		if (null == extent[0]) extent[0] = 0;
-		if (null == extent[1]) extent[1] = 0;
+		if (null == _extent[0]) _extent[0] = 0;
+		if (null == _extent[1]) _extent[1] = 0;
 
 		// Now apply the optional clipping of the extent
-		if (null != scaleExtent[0]) extent[0] = scaleExtent[0];
-		if (null != scaleExtent[1]) extent[1] = scaleExtent[1];
+		if (null != scaleExtent[0]) _extent[0] = scaleExtent[0];
+		if (null != scaleExtent[1]) _extent[1] = scaleExtent[1];
 
-		return extent;
+		return _extent;
 
 	},
 
-	_project : function(coord) {
-		var point = this._map.latLngToLayerPoint([ coord[1], coord[0] ]);
-		return [ point.x, point.y ];
+	_project: function (coord) {
+		var point = this._map.latLngToLayerPoint([coord[1], coord[0]]);
+		return [point.x, point.y];
 	},
 
-	_getBounds: function(data) {
-		if(null == data || data.length < 1) {
-			return { min: [ 0, 0 ], max: [ 0, 0 ]};
+	_getBounds: function (data) {
+		if (null == data || data.length < 1) {
+			return {min: [0, 0], max: [0, 0]};
 		}
 
 		// bounds is [[min long, min lat], [max long, max lat]]
-		var bounds = [ [ 999, 999 ], [ -999, -999 ] ];
+		var bounds = [[999, 999], [-999, -999]];
 
-		data.forEach(function(element) {
+		data.forEach(function (element) {
 			var x = element.point[0];
 			var y = element.point[1];
 
@@ -355,15 +366,17 @@ L.HexbinLayer = L.SVG.extend({
 			bounds[1][1] = Math.max(bounds[1][1], y);
 		});
 
-		return { min: bounds[0], max: bounds[1] };
+		return {min: bounds[0], max: bounds[1]};
 	},
 
-	_linearlySpace: function(from, to, length) {
+	_linearlySpace: function (from, to, length) {
 		var arr = new Array(length);
-		var step = (to - from) / Math.max(length - 1, 1);
+		from = from ? (this.options.scale === 'log' ? Math.log2(from) : from) : 0;
+		var step =
+			((this.options.scale === 'log' ? Math.log2(to) : to) - from) / Math.max(length - 1, 1);
 
 		for (var i = 0; i < length; ++i) {
-			arr[i] = from + (i * step);
+			arr[i] = from + i * step;
 		}
 
 		return arr;
@@ -374,8 +387,10 @@ L.HexbinLayer = L.SVG.extend({
 	// Public API
 	// ------------------------------------
 
-	radius: function(v) {
-		if (!arguments.length) { return this.options.radius; }
+	radius: function (v) {
+		if (!arguments.length) {
+			return this.options.radius;
+		}
 
 		this.options.radius = v;
 		this._hexLayout.radius(v);
@@ -383,101 +398,129 @@ L.HexbinLayer = L.SVG.extend({
 		return this;
 	},
 
-	opacity: function(v) {
-		if (!arguments.length) { return this.options.opacity; }
+	opacity: function (v) {
+		if (!arguments.length) {
+			return this.options.opacity;
+		}
 		this.options.opacity = v;
 
 		return this;
 	},
 
-	duration: function(v) {
-		if (!arguments.length) { return this.options.duration; }
+	duration: function (v) {
+		if (!arguments.length) {
+			return this.options.duration;
+		}
 		this.options.duration = v;
 
 		return this;
 	},
 
-	colorScaleExtent: function(v) {
-		if (!arguments.length) { return this.options.colorScaleExtent; }
+	colorScaleExtent: function (v) {
+		if (!arguments.length) {
+			return this.options.colorScaleExtent;
+		}
 		this.options.colorScaleExtent = v;
 
 		return this;
 	},
 
-	radiusScaleExtent: function(v) {
-		if (!arguments.length) { return this.options.radiusScaleExtent; }
+	radiusScaleExtent: function (v) {
+		if (!arguments.length) {
+			return this.options.radiusScaleExtent;
+		}
 		this.options.radiusScaleExtent = v;
 
 		return this;
 	},
 
-	colorRange: function(v) {
-		if (!arguments.length) { return this.options.colorRange; }
+	colorRange: function (v) {
+		if (!arguments.length) {
+			return this.options.colorRange;
+		}
 		this.options.colorRange = v;
 		this._scale.color.range(v);
 
 		return this;
 	},
 
-	radiusRange: function(v) {
-		if (!arguments.length) { return this.options.radiusRange; }
+	radiusRange: function (v) {
+		if (!arguments.length) {
+			return this.options.radiusRange;
+		}
 		this.options.radiusRange = v;
 		this._scale.radius.range(v);
 
 		return this;
 	},
 
-	colorScale: function(v) {
-		if (!arguments.length) { return this._scale.color; }
+	colorScale: function (v) {
+		if (!arguments.length) {
+			return this._scale.color;
+		}
 		this._scale.color = v;
 
 		return this;
 	},
 
-	radiusScale: function(v) {
-		if (!arguments.length) { return this._scale.radius; }
+	radiusScale: function (v) {
+		if (!arguments.length) {
+			return this._scale.radius;
+		}
 		this._scale.radius = v;
 
 		return this;
 	},
 
-	lng: function(v) {
-		if (!arguments.length) { return this._fn.lng; }
+	lng: function (v) {
+		if (!arguments.length) {
+			return this._fn.lng;
+		}
 		this._fn.lng = v;
 
 		return this;
 	},
 
-	lat: function(v) {
-		if (!arguments.length) { return this._fn.lat; }
+	lat: function (v) {
+		if (!arguments.length) {
+			return this._fn.lat;
+		}
 		this._fn.lat = v;
 
 		return this;
 	},
 
-	colorValue: function(v) {
-		if (!arguments.length) { return this._fn.colorValue; }
+	colorValue: function (v) {
+		if (!arguments.length) {
+			return this._fn.colorValue;
+		}
 		this._fn.colorValue = v;
 
 		return this;
 	},
 
-	radiusValue: function(v) {
-		if (!arguments.length) { return this._fn.radiusValue; }
+	radiusValue: function (v) {
+		if (!arguments.length) {
+			return this._fn.radiusValue;
+		}
 		this._fn.radiusValue = v;
 
 		return this;
 	},
 
-	fill: function(v) {
-		if (!arguments.length) { return this._fn.fill; }
+	fill: function (v) {
+		if (!arguments.length) {
+			return this._fn.fill;
+		}
 		this._fn.fill = v;
 
 		return this;
 	},
 
-	data: function(v) {
-		if (!arguments.length) { return this._data; }
+	data: function (v) {
+		if (!arguments.length) {
+			return this._data;
+		}
 		this._data = (null != v) ? v : [];
 
 		this.redraw();
@@ -488,12 +531,14 @@ L.HexbinLayer = L.SVG.extend({
 	/*
 	 * Getter for the event dispatcher
 	 */
-	dispatch: function() {
+	dispatch: function () {
 		return this._dispatch;
 	},
 
-	hoverHandler: function(v) {
-		if (!arguments.length) { return this._hoverHandler; }
+	hoverHandler: function (v) {
+		if (!arguments.length) {
+			return this._hoverHandler;
+		}
 		this._hoverHandler = (null != v) ? v : L.HexbinHoverHandler.none();
 
 		this.redraw();
@@ -508,7 +553,7 @@ L.HexbinLayer = L.SVG.extend({
 		var that = this;
 
 		// Map the data into an array of latLngs using the configured lat/lng accessors
-		return this._data.map(function(d) {
+		return this._data.map(function (d) {
 			return L.latLng(that.options.lat(d), that.options.lng(d));
 		});
 	},
@@ -528,16 +573,30 @@ L.HexbinLayer = L.SVG.extend({
 // Hover Handlers modify the hexagon and can be combined
 L.HexbinHoverHandler = {
 
-	tooltip: function(options) {
+	tooltip: function (options) {
 
 		// merge options with defaults
 		options = options || {};
-		if (null == options.tooltipContent) { options.tooltipContent = function(d) { return 'Count: ' + d.length; }; }
+		if (null == options.tooltipContent) {
+			options.tooltipContent = function(d) {
+				var value = d.reduce(function(acc, curr) {
+					acc += curr.intensity;
+					return acc;
+				}, 0);
+
+				if (options.transformation) {
+					value = options.transformation(value);
+				}
+
+				return value;
+			};
+		}
 
 		// Generate the tooltip
-		var tooltip = d3.select('body').append('div')
+		var tooltip = select('.map.leaflet-container')
+			.append('div')
 			.attr('class', 'hexbin-tooltip')
-			.style('z-index', 9999)
+			.style('z-index', 9999999)
 			.style('pointer-events', 'none')
 			.style('visibility', 'hidden')
 			.style('position', 'fixed');
@@ -547,22 +606,27 @@ L.HexbinHoverHandler = {
 		// return the handler instance
 		return {
 			mouseover: function (hexLayer, data) {
-				var event = d3.event;
-				var gCoords = d3.mouse(this);
-
-				tooltip
-					.style('visibility', 'visible')
-					.html(options.tooltipContent(data, hexLayer));
+				var gCoords = mouse(this);
 
 				var div = null;
-				if (null != tooltip._groups && tooltip._groups.length > 0 && tooltip._groups[0].length > 0) {
+				if (
+					null != tooltip._groups &&
+					tooltip._groups.length > 0 &&
+					tooltip._groups[0].length > 0
+				) {
 					div = tooltip._groups[0][0];
 				}
-				var h = div.clientHeight, w = div.clientWidth;
+
+				if (!div) return;
+
+				tooltip.style('visibility', 'visible').html(options.tooltipContent(data, hexLayer));
+
+				var h = div.clientHeight;
+				var w = div.clientWidth;
 
 				tooltip
-					.style('top', '' + event.clientY - gCoords[1] - h - 16 + 'px')
-					.style('left', '' + event.clientX - gCoords[0] - w/2 + 'px');
+					.style('top', '' + (event.clientY - gCoords[1] - h - 16) + 'px')
+					.style('left', '' + (event.clientX - gCoords[0] - w / 2) + 'px');
 
 			},
 			mouseout: function (hexLayer, data) {
@@ -574,19 +638,19 @@ L.HexbinHoverHandler = {
 
 	},
 
-	resizeFill: function() {
+	resizeFill: function () {
 
 		// return the handler instance
 		return {
 			mouseover: function (hexLayer, data) {
-				var o = d3.select(this.parentNode);
+				var o = select(this.parentNode);
 				o.select('path.hexbin-hexagon')
 					.attr('d', function (d) {
 						return hexLayer._hexLayout.hexagon(hexLayer.options.radius);
 					});
 			},
 			mouseout: function (hexLayer, data) {
-				var o = d3.select(this.parentNode);
+				var o = select(this.parentNode);
 				o.select('path.hexbin-hexagon')
 					.attr('d', function (d) {
 						return hexLayer._hexLayout.hexagon(hexLayer._scale.radius(hexLayer._fn.radiusValue.call(hexLayer, d)));
@@ -596,7 +660,7 @@ L.HexbinHoverHandler = {
 
 	},
 
-	resizeScale: function(options) {
+	resizeScale: function (options) {
 
 		// merge options with defaults
 		options = options || {};
@@ -605,14 +669,14 @@ L.HexbinHoverHandler = {
 		// return the handler instance
 		return {
 			mouseover: function (hexLayer, data) {
-				var o = d3.select(this.parentNode);
+				var o = select(this.parentNode);
 				o.select('path.hexbin-hexagon')
 					.attr('d', function (d) {
 						return hexLayer._hexLayout.hexagon(hexLayer._scale.radius.range()[1] * (1 + options.radiusScale));
 					});
 			},
 			mouseout: function (hexLayer, data) {
-				var o = d3.select(this.parentNode);
+				var o = select(this.parentNode);
 				o.select('path.hexbin-hexagon')
 					.attr('d', function (d) {
 						return hexLayer._hexLayout.hexagon(hexLayer._scale.radius(hexLayer._fn.radiusValue.call(hexLayer, d)));
@@ -622,32 +686,38 @@ L.HexbinHoverHandler = {
 
 	},
 
-	compound: function(options) {
+	compound: function (options) {
 
 		options = options || {};
-		if (null == options.handlers) options.handlers = [ L.HexbinHoverHandler.none() ];
+		if (null == options.handlers) options.handlers = [L.HexbinHoverHandler.none()];
 
 		return {
 			mouseover: function (hexLayer, data) {
 				var that = this;
-				options.handlers.forEach(function(h) { h.mouseover.call(that, hexLayer, data); });
+				options.handlers.forEach(function (h) {
+					h.mouseover.call(that, hexLayer, data);
+				});
 			},
 			mouseout: function (hexLayer, data) {
 				var that = this;
-				options.handlers.forEach(function(h) { h.mouseout.call(that, hexLayer, data); });
+				options.handlers.forEach(function (h) {
+					h.mouseout.call(that, hexLayer, data);
+				});
 			}
 		};
 
 	},
 
-	none: function() {
+	none: function () {
 		return {
-			mouseover: function () {},
-			mouseout: function () {}
+			mouseover: function () {
+			},
+			mouseout: function () {
+			}
 		};
 	}
 };
 
-L.hexbinLayer = function(options) {
+L.hexbinLayer = function (options) {
 	return new L.HexbinLayer(options);
 };
