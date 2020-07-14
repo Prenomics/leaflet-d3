@@ -1,27 +1,33 @@
-const
-	path = require('path'),
-	pkg = require('./package.json');
+import resolve from '@rollup/plugin-node-resolve';
+import { terser } from 'rollup-plugin-terser';
+
+const path = require('path');
+const pkg = require('./package.json');
 
 export default {
-	input: path.posix.resolve('src/js/index.js'),
+	input: ['src/index.js'],
 	external: [
 		'd3-array',
 		'd3-scale',
 		'd3-hexbin',
 		'd3-dispatch',
 		'd3-selection',
+		'd3-transition',
 		'leaflet'
 	],
 	output: {
-		banner: `/*! ${pkg.name} - ${pkg.version} - ${pkg.copyright} + */`,
-		file: path.posix.join('./dist', `${pkg.artifactName}.js`),
-		format: 'umd',
-		globals: {
-			'd3': 'd3',
-			'd3-hexbin': 'd3.hexbin',
-			'leaflet': 'L'
-		},
-		name: pkg.moduleName,
-		sourcemap: true
-	}
+		format: 'es',
+		dir: 'dist',
+		entryFileNames: 'main.js',
+		sourcemap: true,
+	},
+	plugins: [
+		resolve(),
+		terser({
+			keep_classnames: true,
+			output: {
+				comments: false,
+			},
+		}),
+	],
 };

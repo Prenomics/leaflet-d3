@@ -3,6 +3,7 @@ import {event, mouse, select} from 'd3-selection';
 import {dispatch} from 'd3-dispatch';
 import {scaleLinear} from 'd3-scale';
 import {extent} from 'd3-array';
+import 'd3-transition';
 import 'leaflet';
 
 /**
